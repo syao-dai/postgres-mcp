@@ -53,6 +53,14 @@ class AccessMode(str, Enum):
     RESTRICTED = "restricted"  # Read-only with safety features
 
 
+class OutputFormat(str, Enum):
+    """Output formats for SQL query results."""
+
+    LIST = "list"  # Python list representation (original format)
+    MARKDOWN = "markdown"  # Markdown table format
+    CSV = "csv"  # CSV format
+
+
 # Global variables
 db_connection = DbConnPool()
 current_access_mode = AccessMode.UNRESTRICTED
@@ -79,6 +87,73 @@ def format_text_response(text: Any) -> ResponseType:
 def format_error_response(error: str) -> ResponseType:
     """Format an error response."""
     return format_text_response(f"Error: {error}")
+
+
+def format_query_results(rows: list[dict[str, Any]], output_format: OutputFormat) -> str:
+    """Format query results according to the specified output format.
+
+    Args:
+        rows: List of row dictionaries from query results
+        output_format: Desired output format (list, markdown, or csv)
+
+    Returns:
+        Formatted string representation of the query results
+    """
+    if not rows:
+        return "No results"
+
+    if output_format == OutputFormat.LIST:
+        # Original format: Python list representation
+        return str(rows)
+
+    elif output_format == OutputFormat.MARKDOWN:
+        # Markdown table format
+        if not rows:
+            return "No results"
+
+        # Get column names from the first row
+        columns = list(rows[0].keys())
+
+        # Build header row
+        header = "| " + " | ".join(str(col) for col in columns) + " |"
+        separator = "| " + " | ".join("---" for _ in columns) + " |"
+
+        # Build data rows
+        data_rows = []
+        for row in rows:
+            values = [str(row.get(col, "")) for col in columns]
+            data_rows.append("| " + " | ".join(values) + " |")
+
+        # Combine all parts
+        return "\n".join([header, separator] + data_rows)
+
+    elif output_format == OutputFormat.CSV:
+        # CSV format
+        if not rows:
+            return "No results"
+
+        # Get column names from the first row
+        columns = list(rows[0].keys())
+
+        # Build CSV header
+        lines = [",".join(columns)]
+
+        # Build CSV data rows
+        for row in rows:
+            values = []
+            for col in columns:
+                value = str(row.get(col, ""))
+                # Escape CSV special characters
+                if "," in value or '"' in value or "\n" in value:
+                    value = '"' + value.replace('"', '""') + '"'
+                values.append(value)
+            lines.append(",".join(values))
+
+        return "\n".join(lines)
+
+    else:
+        # Fallback to list format
+        return str(rows)
 
 
 @mcp.tool(
@@ -413,15 +488,37 @@ If there is no hypothetical index, you can pass an empty list.""",
 
 # Query function declaration without the decorator - we'll add it dynamically based on access mode
 async def execute_sql(
-    sql: str = Field(description="SQL to run", default="all"),
+    sql: str = Field(description="SQL to run"),
+    format: Literal["list", "markdown", "csv"] = Field(
+        description="Output format for query results. Options: 'list' (Python list representation), "
+        "'markdown' (Markdown table format, best for readability), 'csv' (CSV format). "
+        "Default is 'markdown' for better readability in chat interfaces.",
+        default="markdown",
+    ),
 ) -> ResponseType:
-    """Executes a SQL query against the database."""
+    """Executes a SQL query against the database.
+
+    Args:
+        sql: SQL query to execute
+        format: Output format for results (list, markdown, or csv). Default is markdown.
+
+    Returns:
+        Query results formatted according to the specified format
+    """
     try:
         sql_driver = await get_sql_driver()
         rows = await sql_driver.execute_query(sql)  # type: ignore
         if rows is None:
             return format_text_response("No results")
-        return format_text_response(list([r.cells for r in rows]))
+
+        # Convert rows to list of dictionaries
+        result_rows = [r.cells for r in rows]
+
+        # Format results according to specified format
+        output_format = OutputFormat(format)
+        formatted_result = format_query_results(result_rows, output_format)
+
+        return format_text_response(formatted_result)
     except Exception as e:
         logger.error(f"Error executing query: {e}")
         return format_error_response(str(e))
