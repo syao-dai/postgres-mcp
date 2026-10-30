@@ -403,6 +403,25 @@ Postgres MCP Pro lets you combine the best of both worlds by pairing LLMs with c
 Testing is critical to ensuring that Postgres MCP Pro is reliable and accurate.
 We are building out a suite of AI-generated adversarial workloads designed to challenge Postgres MCP Pro and ensure it performs under a broad variety of scenarios.
 
+*How do I run the tests?*
+Unit tests need no database and run in a few seconds:
+
+```bash
+uv sync
+uv run pytest tests/unit
+```
+
+Integration tests (`tests/integration`) start Postgres containers and need Docker.
+To run only the MCP output-shape regression test:
+
+```bash
+uv run pytest tests/unit/test_mcp_tool_output.py -v
+```
+
+All tools set `structured_output=False`, and `execute_sql` returns a plain `CallToolResult`, so each result reaches the client once, in `content`, instead of a second copy in `structuredContent`.
+`tests/unit/test_mcp_tool_output.py` guards this through an in-memory MCP client.
+Run it after every `mcp` SDK upgrade (for example after `uv lock --upgrade-package mcp`); a failure means the duplicate copy is back and clients pay for the same rows twice.
+
 *What Postgres versions are supported?*
 Our testing presently focuses on Postgres 15, 16, and 17.
 We plan to support Postgres versions 13 through 17.

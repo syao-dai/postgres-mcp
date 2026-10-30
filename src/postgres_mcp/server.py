@@ -84,6 +84,16 @@ def format_text_response(text: Any) -> ResponseType:
     return [types.TextContent(type="text", text=str(text))]
 
 
+def format_call_tool_result(text: Any) -> types.CallToolResult:
+    """Return a plain text CallToolResult.
+
+    FastMCP derives an outputSchema and structuredContent from a typed return annotation such
+    as ResponseType, so the same text reaches the client twice (content plus
+    structuredContent). Returning CallToolResult directly sends only the content.
+    """
+    return types.CallToolResult(content=[types.TextContent(type="text", text=str(text))])
+
+
 def format_error_response(error: str) -> ResponseType:
     """Format an error response."""
     return format_text_response(f"Error: {error}")
@@ -157,6 +167,7 @@ def format_query_results(rows: list[dict[str, Any]], output_format: OutputFormat
 
 
 @mcp.tool(
+    structured_output=False,
     description="List all schemas in the database",
     annotations=ToolAnnotations(
         title="List Schemas",
@@ -189,6 +200,7 @@ async def list_schemas() -> ResponseType:
 
 
 @mcp.tool(
+    structured_output=False,
     description="List objects in a schema",
     annotations=ToolAnnotations(
         title="List Objects",
@@ -263,6 +275,7 @@ async def list_objects(
 
 
 @mcp.tool(
+    structured_output=False,
     description="Show detailed information about a database object",
     annotations=ToolAnnotations(
         title="Get Object Details",
@@ -402,6 +415,7 @@ async def get_object_details(
 
 
 @mcp.tool(
+    structured_output=False,
     description="Explains the execution plan for a SQL query, showing how the database will execute it and provides detailed cost estimates.",
     annotations=ToolAnnotations(
         title="Explain Query",
@@ -495,7 +509,7 @@ async def execute_sql(
         "Default is 'markdown' for better readability in chat interfaces.",
         default="markdown",
     ),
-) -> ResponseType:
+) -> types.CallToolResult:
     """Executes a SQL query against the database.
 
     Args:
@@ -509,7 +523,7 @@ async def execute_sql(
         sql_driver = await get_sql_driver()
         rows = await sql_driver.execute_query(sql)  # type: ignore
         if rows is None:
-            return format_text_response("No results")
+            return format_call_tool_result("No results")
 
         # Convert rows to list of dictionaries
         result_rows = [r.cells for r in rows]
@@ -518,13 +532,14 @@ async def execute_sql(
         output_format = OutputFormat(format)
         formatted_result = format_query_results(result_rows, output_format)
 
-        return format_text_response(formatted_result)
+        return format_call_tool_result(formatted_result)
     except Exception as e:
         logger.error(f"Error executing query: {e}")
-        return format_error_response(str(e))
+        return format_call_tool_result(f"Error: {e}")
 
 
 @mcp.tool(
+    structured_output=False,
     description="Analyze frequently executed queries in the database and recommend optimal indexes",
     annotations=ToolAnnotations(
         title="Analyze Workload Indexes",
@@ -552,6 +567,7 @@ async def analyze_workload_indexes(
 
 
 @mcp.tool(
+    structured_output=False,
     description="Analyze a list of (up to 10) SQL queries and recommend optimal indexes",
     annotations=ToolAnnotations(
         title="Analyze Query Indexes",
@@ -585,6 +601,7 @@ async def analyze_query_indexes(
 
 
 @mcp.tool(
+    structured_output=False,
     description="Analyzes database health. Here are the available health checks:\n"
     "- index - checks for invalid, duplicate, and bloated indexes\n"
     "- connection - checks the number of connection and their utilization\n"
@@ -618,6 +635,7 @@ async def analyze_db_health(
 
 
 @mcp.tool(
+    structured_output=False,
     name="get_top_queries",
     description=f"Reports the slowest or most resource-intensive queries using data from the '{PG_STAT_STATEMENTS}' extension.",
     annotations=ToolAnnotations(
@@ -704,6 +722,7 @@ async def main():
     if current_access_mode == AccessMode.UNRESTRICTED:
         mcp.add_tool(
             execute_sql,
+            structured_output=False,
             description="Execute any SQL query",
             annotations=ToolAnnotations(
                 title="Execute SQL",
@@ -713,6 +732,7 @@ async def main():
     else:
         mcp.add_tool(
             execute_sql,
+            structured_output=False,
             description="Execute a read-only SQL query",
             annotations=ToolAnnotations(
                 title="Execute SQL (Read-Only)",

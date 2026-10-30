@@ -10,6 +10,12 @@ To run all tests:
 uv run pytest
 ```
 
+To run the MCP output-shape regression test (no database needed; rerun after `mcp` SDK upgrades):
+
+```bash
+uv run pytest tests/unit/test_mcp_tool_output.py
+```
+
 To run a specific test file:
 
 ```bash
